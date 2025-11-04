@@ -80,6 +80,9 @@ function build_kernel()
         -e LTO_CLANG_FULL \
         -d THINLTO
     fi
+        scripts/config --file $out_path/.config \
+        -e KSU_KPROBES_HOOK \
+        -e KSU_MANUAL_SU
     if [ "${branch}" = "android16-6.12" ]; then
         scripts/config --file $out_path/.config -e CONFIG_CFI_ICALL_NORMALIZE_INTEGERS
     fi

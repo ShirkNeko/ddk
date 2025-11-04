@@ -1,13 +1,13 @@
 {
   "registry": {
     "ddk": {
-      "github": "ghcr.io/ylarod/ddk",
-      "docker": "docker.io/ylarod/ddk",
-      "cnb": "docker.cnb.cool/ylarod/ddk/ddk"
+      "github": "ghcr.io/shirkneko/ddk",
+      "docker": "",
+      "cnb": "docker.cnb.cool/shirkneko/ddk/ddk-dev"
     },
     "ddk-clang": {
-      "github": "ghcr.io/ylarod/ddk/clang",
-      "docker": "docker.io/ylarod/ddk-clang",
+      "github": "ghcr.io/shirkneko/ddk/clang",
+      "docker": "",
       "cnb": "docker.cnb.cool/ylarod/ddk/ddk-clang"
     }
   },

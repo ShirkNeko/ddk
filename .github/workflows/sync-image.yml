@@ -1,4 +1,4 @@
-name: sync-image
+name: sync-image-to-ghcr
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   sync:
-    name: Sync images from CNB to GHCR & Docker Hub
+    name: Sync images from CNB to GHCR
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,117 +33,50 @@ jobs:
         run: |
           echo "$GHCR_TOKEN" | skopeo login ghcr.io --username "$GHCR_USER" --password-stdin
 
-      - name: Login to Docker Hub
-        env:
-          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_PASS: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          if [ -n "${DOCKERHUB_USER}" ] && [ -n "${DOCKERHUB_PASS}" ]; then
-            echo "$DOCKERHUB_PASS" | skopeo login docker.io --username "$DOCKERHUB_USER" --password-stdin
-          else
-            echo "[WARN] 未配置 Docker Hub 凭据，跳过登录"
-          fi
-
-      - name: Sync images directly
+      - name: Sync images to GHCR only
         run: |
           set -euo pipefail
-          # 固定使用 cnb 作为源
           src_key="cnb"
           echo "使用源: ${src_key}"
           date_input='${{ github.event.inputs.date }}'
-          if [ -n "$date_input" ]; then
-            echo "使用日期后缀: $date_input"
-          else
-            echo "未指定日期后缀"
-          fi
-          # 读取 registry 映射
+          [ -n "$date_input" ] && echo "使用日期后缀: $date_input" || echo "未指定日期后缀"
+
+          # 读取映射
           ghcr_repo=$(jq -r '.registry["ddk"].github' mapping.json)
-          docker_repo=$(jq -r '.registry["ddk"].docker' mapping.json)
           cnb_repo=$(jq -r '.registry["ddk"].cnb' mapping.json)
           ghcr_clang_repo=$(jq -r '.registry["ddk-clang"].github' mapping.json)
-          docker_clang_repo=$(jq -r '.registry["ddk-clang"].docker' mapping.json)
           cnb_clang_repo=$(jq -r '.registry["ddk-clang"].cnb' mapping.json)
 
-          # 选择源
-          src_ddk="$cnb_repo"; src_clang="$cnb_clang_repo"
-
-          # ddk 标签：来自 mapping.json.android[].name
           echo "[INFO] 从 mapping.json 收集 ddk 标签"
-          ddk_count=$(jq -r '.android | length' mapping.json)
-          echo "ddk 标签数量: $ddk_count"
-          while read -r tag; do
-            echo "[DEBUG] ddk tag: $tag"
-            name="ddk:$tag"
-            src="$src_ddk:$tag"
-            dst_ghcr="$ghcr_repo:$tag"
-            dst_dock="$docker_repo:$tag"
-            echo "=== 同步 $name ==="
+          for tag in $(jq -r '.android[].name' mapping.json); do
+            echo "=== 同步 ddk:$tag ==="
+            src="$cnb_repo:$tag"
+            dst="$ghcr_repo:$tag"
             echo "源: $src"
-            echo "→ GHCR: $dst_ghcr"
-            echo "→ Docker: $dst_dock"
-            skopeo copy --all docker://$src docker://$dst_ghcr
-            if skopeo login --get-login docker.io >/dev/null 2>&1; then
-              skopeo copy --all docker://$src docker://$dst_dock
-            else
-              echo "[WARN] 未登录 Docker Hub，跳过 $dst_dock"
-            fi
+            echo "→ GHCR: $dst"
+            skopeo copy --all docker://"$src" docker://"$dst"
 
-            # 若指定日期，则添加额外的日期标签项（源使用原标签，目标标签追加 -$date）
             if [ -n "$date_input" ]; then
-              echo "[DEBUG] ddk tag with date: ${tag}-$date_input"
-              name_date="ddk:${tag}-$date_input"
-              dst_ghcr_date="$ghcr_repo:${tag}-$date_input"
-              dst_dock_date="$docker_repo:${tag}-$date_input"
-              echo "=== 同步 $name_date ==="
-              echo "源: $src"
-              echo "→ GHCR: $dst_ghcr_date"
-              echo "→ Docker: $dst_dock_date"
-              skopeo copy --all docker://$src docker://$dst_ghcr_date
-              if skopeo login --get-login docker.io >/dev/null 2>&1; then
-                skopeo copy --all docker://$src docker://$dst_dock_date
-              else
-                echo "[WARN] 未登录 Docker Hub，跳过 $dst_dock_date"
-              fi
+              dst_date="$ghcr_repo:${tag}-$date_input"
+              echo "→ GHCR (date): $dst_date"
+              skopeo copy --all docker://"$src" docker://"$dst_date"
             fi
-          done < <(jq -r '.android[].name' mapping.json)
+          done
 
-          # ddk-clang 标签：来自 mapping.json.clang[].version
           echo "[INFO] 从 mapping.json 收集 ddk-clang 标签"
-          clang_count=$(jq -r '.clang | length' mapping.json)
-          echo "ddk-clang 标签数量: $clang_count"
-          while read -r tag; do
-            echo "[DEBUG] clang tag: $tag"
-            name="ddk-clang:$tag"
-            src="$src_clang:$tag"
-            dst_ghcr="$ghcr_clang_repo:$tag"
-            dst_dock="$docker_clang_repo:$tag"
-            echo "=== 同步 $name ==="
+          for tag in $(jq -r '.clang[].version' mapping.json); do
+            echo "=== 同步 ddk-clang:$tag ==="
+            src="$cnb_clang_repo:$tag"
+            dst="$ghcr_clang_repo:$tag"
             echo "源: $src"
-            echo "→ GHCR: $dst_ghcr"
-            echo "→ Docker: $dst_dock"
-            skopeo copy --all docker://$src docker://$dst_ghcr
-            if skopeo login --get-login docker.io >/dev/null 2>&1; then
-              skopeo copy --all docker://$src docker://$dst_dock
-            else
-              echo "[WARN] 未登录 Docker Hub，跳过 $dst_dock"
-            fi
+            echo "→ GHCR: $dst"
+            skopeo copy --all docker://"$src" docker://"$dst"
 
             if [ -n "$date_input" ]; then
-              echo "[DEBUG] clang tag with date: ${tag}-$date_input"
-              name_date="ddk-clang:${tag}-$date_input"
-              dst_ghcr_date="$ghcr_clang_repo:${tag}-$date_input"
-              dst_dock_date="$docker_clang_repo:${tag}-$date_input"
-              echo "=== 同步 $name_date ==="
-              echo "源: $src"
-              echo "→ GHCR: $dst_ghcr_date"
-              echo "→ Docker: $dst_dock_date"
-              skopeo copy --all docker://$src docker://$dst_ghcr_date
-              if skopeo login --get-login docker.io >/dev/null 2>&1; then
-                skopeo copy --all docker://$src docker://$dst_dock_date
-              else
-                echo "[WARN] 未登录 Docker Hub，跳过 $dst_dock_date"
-              fi
+              dst_date="$ghcr_clang_repo:${tag}-$date_input"
+              echo "→ GHCR (date): $dst_date"
+              skopeo copy --all docker://"$src" docker://"$dst_date"
             fi
-          done < <(jq -r '.clang[].version' mapping.json)
+          done
 
-          echo "同步完成。源 → GHCR 与（可选）Docker Hub。" | tee -a $GITHUB_STEP_SUMMARY
+          echo "同步完成：源 → GHCR" | tee -a $GITHUB_STEP_SUMMARY
